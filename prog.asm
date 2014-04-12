@@ -15,11 +15,10 @@
     JC LEFT_A
     SUB B, 1
     JMP OUT_NUM
-LEFT_A:
-    SUB A, 1
+LEFT_A: SUB A, 1
     JMP OUT_NUM
 
-0x10:               ; right interrupt
+0x16:               ; right interrupt
     SHR SWR
     JC RIGHT_A
     ADD B, 1
@@ -28,7 +27,7 @@ RIGHT_A:
     ADD A, 1
     JMP OUT_NUM
 
-0x18:               ; push interrupt
+0x24:               ; push interrupt
     OUT '='
     SUB B, 0
     JNZ DIVIDE
@@ -51,7 +50,7 @@ DIV_RESIDUE:
     ADD C, B
     JMP DIV_OUT
 DIV_NO_RESIDUE:
-    MOV C, ZERO
+    MOV C, 0
 DIV_OUT:
     OUTH D
     OUTL D
