@@ -1,22 +1,24 @@
 #!/usr/bin/python
 
 import sys
+import ply.lex as lex
+import ply.yacc as yacc
 
 reserved = {
-    'HLT'  : 0xF0,
-    'MOV'  : 0x00,
-    'ADD'  : 0x40,
-    'SUB'  : 0x80,
-    'SHL'  : 0xC0,
-    'SHR'  : 0xC8,
-    'JZ'   : 0xE1,
-    'JNZ'  : 0xE2,
-    'JC'   : 0xE4,
-    'JNC'  : 0xE8,
-    'JMP'  : 0xE0,
-    'OUTL' : 0xD0,
-    'OUTH' : 0xD8,
-    'OUT'  : 0xF8,
+    'HLT'  : (0xF0, ('none',),),
+    'MOV'  : (0x00, ('reg_imm', 'reg_reg'),),
+    'ADD'  : (0x40, ('reg_imm', 'reg_reg'),),
+    'SUB'  : (0x80, ('reg_imm', 'reg_reg'),),
+    'SHL'  : (0xC0, ('reg',),),
+    'SHR'  : (0xC8, ('reg',),),
+    'JZ'   : (0xE1, ('imm', 'label'),),
+    'JNZ'  : (0xE2, ('imm', 'label'),),
+    'JC'   : (0xE4, ('imm', 'label'),),
+    'JNC'  : (0xE8, ('imm', 'label'),),
+    'JMP'  : (0xE0, ('imm', 'label'),),
+    'OUTL' : (0xD0, ('reg',),),
+    'OUTH' : (0xD8, ('reg',),),
+    'OUT'  : (0xF8, ('imm',),),
 }
 
 register = {
@@ -67,11 +69,15 @@ def t_error(t):
 
 tokens = ['OP', 'IMMEDIATE', 'REGISTER', 'LABEL', 'COLON', 'DP', 'NL']
 
-import ply.lex as lex
 lex.lex()
 
 code = []
 labels = {}
+
+def syntax_error(text, lineno=None):
+    x = SyntaxError(text)
+    x.lineno = lineno
+    raise x
 
 def p_statements(p):
     '''statements : 
@@ -85,72 +91,106 @@ def p_statement(p):
 def p_address(p):
     'address : IMMEDIATE DP'
     if len(code) >= p[1]:
-        print("Address %d already taken on line %d (now: %d)" % (p[1], p.lineno(1), len(code)), file=sys.stderr)
-        raise SyntaxError
+        syntax_error("Address %d already taken (now: @%d)" % (p[1], len(code)), p.lineno(1))
     code.extend([0] * (p[1] - len(code)))
 
 def p_label(p):
     'label : LABEL DP'
     if p[1] in labels:
-        print("Label %s already defined on line %d" % (p[1], p.lineno(1)), file=sys.stderr)
-        raise SyntaxError
-    labels[p[1]] = len(code)
+        syntax_error("Label %s already defined (original on line %d)" % (p[1], labels[p[1]][1]), p.lineno(1))
+    labels[p[1]] = (len(code), p.lineno(1))
 
 def p_empty_expression(p):
     'expression :'
 
 def p_expression(p):
     'expression : OP'
-    code.append(p[1])
+    if 'none' not in p[1][1]:
+        syntax_error("Wrong arguments to OP", p.lineno(1))
+    code.append(p[1][0])
 
 def p_expression_imm(p):
     'expression : OP IMMEDIATE'
-    code.extend((p[1], p[2]))
+    if 'imm' not in p[1][1]:
+        syntax_error("Wrong arguments to OP", p.lineno(1))
+    code.extend((p[1][0], p[2]))
 
 def p_expression_label(p):
     'expression : OP LABEL'
-    code.extend((p[1], p[2]))
+    if 'label' not in p[1][1]:
+        syntax_error("Wrong arguments to OP", p.lineno(1))
+    code.extend((p[1][0], p[2]))
 
 def p_expression_reg(p):
     'expression : OP REGISTER'
-    code.append(p[1] | p[2])
+    if 'reg' not in p[1][1]:
+        syntax_error("Wrong arguments to OP", p.lineno(1))
+    code.append(p[1][0] | p[2])
 
 def p_expression_reg_reg(p):
     'expression : OP REGISTER COLON REGISTER'
-    code.append(p[1] | p[2] | (p[4] << 3))
+    if 'reg_reg' not in p[1][1]:
+        syntax_error("Wrong arguments to OP", p.lineno(1))
+    code.append(p[1][0] | p[2] | (p[4] << 3))
 
 def p_expression_reg_imm(p):
     'expression : OP REGISTER COLON IMMEDIATE'
-    code.extend((p[1] | p[2] | (0x07 << 3), p[4]))
+    if 'reg_imm' not in p[1][1]:
+        syntax_error("Wrong arguments to OP", p.lineno(1))
+    code.extend((p[1][0] | p[2] | (0x07 << 3), p[4]))
 
 def p_error(p):
-    print("Syntax error on line %d col %d; unexpected %s(%s)" % (p.lineno, p.lexpos, p.type, p.value), file=sys.stderr)
-    raise SyntaxError
-
-import ply.yacc as yacc
+    syntax_error("Syntax error. Unexpected %s(%s)" % (p.type, p.value), p.lineno)
 
 parser = yacc.yacc()
 
-for line in sys.stdin:
+import argparse
+argparser = argparse.ArgumentParser()
+argparser.add_argument('infile', nargs='?', type=argparse.FileType('r'), default=sys.stdin, help='Input file')
+argparser.add_argument('outfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout, help='Output file')
+argparser.add_argument('--coe', dest='coe', action='store_true', help='Write coe file')
+argparser.add_argument('--template', dest='template', type=argparse.FileType('r'), help='Template vhd to embedd Memory')
+args = argparser.parse_args()
+
+for line in args.infile:
     try:
         parser.parse(line)
-    except:
-        break
+    except SyntaxError as e:
+        print(str(e), file=sys.stderr)
+        sys.exit(-1)
 
 def out(x):
     num = hex(x)[2:]
     if len(num) == 1:
         num = "0" + num
-    print('x"%s",' % num)
+    return num
 
-print("(")
+if args.coe:
+    print("""memory_initialization_radix=16;
+memory_initialization_vector=""", file=args.outfile)
+else:
+    if args.template:
+        for line in args.template:
+            if line == '%%\n':
+                break
+            print(line, file=args.outfile, end='')
+    print("        (", file=args.outfile)
 
+binary = []
 for x in code:
     if isinstance(x, str):
         if x not in labels:
             print("Label %s undefined!" % x, file=sys.stderr)
-            break
-        out(labels[x])
+            sys.exit(-1)
+        binary.append(out(labels[x][0]))
     else:
-        out(x)
-print(" others => (others => '0'))")
+        binary.append(out(x))
+
+if args.coe:
+    print(',\n'.join(binary), file=args.outfile, end=';\n')
+else:
+    print('\n'.join(['         x"%s",' % num for num in binary]), file=args.outfile)
+    print("         others => (others => '0'));", file=args.outfile)
+    if args.template:
+        for line in args.template:
+            print(line, file=args.outfile, end='')
