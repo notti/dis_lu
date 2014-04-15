@@ -18,23 +18,12 @@ entity rotKey is
 	);
 end entity rotKey;
 
-architecture RTL of rotKey is
-
-	-- Declaration of the  debounce component
-	component debounce
-		port(clk   : in  std_logic;
-			 input    : in  std_logic;
-			 output   : out std_logic;
-			 riseedge : out std_logic;
-			 falledge : out std_logic);
-	end component debounce;
+architecture beh of rotKey is
 
     signal rotA_d : std_logic;
     signal rotB_d : std_logic;
     signal rotA_rise : std_logic;
-    signal rotA_fall : std_logic;
     signal rotB_rise : std_logic;
-    signal rotB_fall : std_logic;
 begin
     deb_rotA: entity work.debounce
     generic map(
@@ -44,7 +33,7 @@ begin
         input => rotA,
         output => rotA_d,
         riseedge => rotA_rise,
-        falledge => rotA_fall 
+        falledge => open
     );
 
     deb_rotB: entity work.debounce
@@ -55,7 +44,7 @@ begin
         input => rotB,
         output => rotB_d,
         riseedge => rotB_rise,
-        falledge => rotB_fall 
+        falledge => open
     );
 
     deb_rotPush: entity work.debounce
@@ -75,4 +64,4 @@ begin
     rotLeftEvent <= '1' when rotB_rise = '1' and rotA_d = '0' else
                     '0';
 
-end architecture RTL;
+end architecture beh;

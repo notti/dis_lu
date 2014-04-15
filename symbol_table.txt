@@ -3,7 +3,10 @@ A B C D SWR PC
 001 B
 010 C
 011 D
-100 SWR
+100 ZERO
+101 ONE
+110 SWR
+111 Immediate
 
 MOV Reg, Const | 00111Reg | 2
 MOV Reg1, Reg2 | 00RegReg | 1
@@ -11,14 +14,14 @@ ADD Reg, Const | 01111Reg | 2
 ADD Reg1, Reg2 | 01RegReg | 1
 SUB Reg, Const | 10111Reg | 2
 SUB Reg1, Reg2 | 10RegReg | 1
-SHL REG        | 11000Reg | 1
-SHR REG        | 11001Reg | 1
-OUTL Reg       | 11010Reg | 1
-OUTH Reg       | 11011Reg | 1
+SHL Reg1       | 11000Reg | 1
+SHR Reg1       | 11001Reg | 1
+OUTL Reg1      | 11010Reg | 1
+OUTH Reg1      | 11011Reg | 1
 JZ Addr        | 11100001 | 2
 JNZ Addr       | 11100010 | 2
 JC Addr        | 11100100 | 2
 JNC Addr       | 11101000 | 2
 JMP Addr       | 11100000 | 2
 HLT            | 11110000 | 1
-OUT char       | 11111000 | 2
+OUT Char       | 11111000 | 2

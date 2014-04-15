@@ -23,21 +23,20 @@ entity core is
 	);
 end entity core;
 
-architecture RTL of core is
+architecture beh of core is
 
     type state_type is (RESET, EXEC, FETCH_ARGUMENT, HLT);
     signal state : state_type;
 
-    type reg_file is array (integer range <>) of std_logic_vector(7 downto 0);
-    signal reg : reg_file(4 downto 0);
-    -- A, B, C, D, SWR
+    type alu_type is (MOV, ADD, SUB, SHL, SHR, NO_ALU);
 
-    alias reg1 : std_logic_vector(2 downto 0) is data(5 downto 3);
-    alias reg2 : std_logic_vector(2 downto 0) is data(2 downto 0);
+    type reg_file is array (integer range <>) of std_logic_vector(7 downto 0);
+    signal reg : reg_file(3 downto 0);
+    signal reg_fixed : reg_file(3 downto 0);
+    -- A, B, C, D, SWR
 
     signal PC_reg: std_logic_vector(7 downto 0);
     signal IR_reg: std_logic_vector(7 downto 0);
-    alias reg1_ir : std_logic_vector(2 downto 0) is IR_reg(2 downto 0);
 
     signal carry : std_logic;
     signal zero  : std_logic;
@@ -46,19 +45,33 @@ architecture RTL of core is
     signal hex_write : std_logic;
     signal out_write : std_logic;
     signal hex_ascii : std_logic_vector(7 downto 0);
+    signal lcd_char  : std_logic_vector(7 downto 0);
 
     signal leftInt_r : std_logic;
     signal rightInt_r : std_logic;
     signal pushInt_r : std_logic;
 begin
 
-    reg(4)(3 downto 0) <= switch;
-    reg(4)(7 downto 4) <= (others => '0');
+    reg_fixed(0) <= x"00";
+    reg_fixed(1) <= x"01";
+    reg_fixed(2)(3 downto 0) <= switch;
+    reg_fixed(2)(7 downto 4) <= (others => '0');
+    reg_fixed(3) <= (others => '0');
 
     core_proc: process(clk)
         variable result: unsigned(8 downto 0);
-        variable shift_result : std_logic_vector(7 downto 0);
+        variable alu_op : alu_type;
+        variable arg1 : unsigned(8 downto 0);
+        variable arg2 : unsigned(8 downto 0);
+
+        variable target : std_logic_vector(2 downto 0);
+        
     begin
+        alu_op := NO_ALU;
+        arg1 := (others => '0');
+        arg2 := (others => '0');
+        target := (others => '0');
+        result := (others => '0');
         if rising_edge(clk) then
             if rst = '0' then
                 state <= RESET;
@@ -88,148 +101,152 @@ begin
                         carry <= '0';
                         zero <= '0';
                         hex_value <= (others => '0');
+                        lcd_char <= (others => '0');
                         
                         state <= EXEC;
                     when EXEC =>
                         IR_reg <= data;
                         PC_reg <= std_logic_vector(unsigned(PC_reg) + 1);
-                        if reg1 = "111" then
+                        if data(5 downto 3) = "111" or data(7 downto 4) = "1110" or data(7 downto 3) = "11111" then
                             state <= FETCH_ARGUMENT;
                         else
-                            if 
-                            case data(7 downto 6) is
-                                when "00" =>
-                                    -- MOV reg1, reg2
-                                    reg(to_integer(unsigned(reg1))) <= reg(to_integer(unsigned(reg2)));
-                                when "01" =>
-                                    -- ADD reg1, reg2
-                                    result := resize(unsigned(reg(to_integer(unsigned(reg1)))),9) + resize(unsigned(reg(to_integer(unsigned(reg2)))),9);
-                                    reg(to_integer(unsigned(reg1))) <= std_logic_vector(result(7 downto 0));
-                                    carry <= result(8);
-                                    if result = "000000000" then
-                                        zero <= '1';
-                                    else
-                                        zero <= '0';
-                                    end if;
-                                when "10" =>
-                                    -- SUB reg1, reg2
-                                    result := resize(unsigned(reg(to_integer(unsigned(reg1)))),9) - resize(unsigned(reg(to_integer(unsigned(reg2)))),9);
-                                    reg(to_integer(unsigned(reg1))) <= std_logic_vector(result(7 downto 0));
-                                    carry <= result(8);
-                                    if result = "000000000" then
-                                        zero <= '1';
-                                    else
-                                        zero <= '0';
-                                    end if;
-                                when others =>
-                                    if data(5 downto 4) = "00" then
-                                        if data(3) = '0' then
-                                            -- SHL
-                                            carry <= reg(to_integer(unsigned(reg1)))(7);
-                                            shift_result := reg(to_integer(unsigned(reg1)))(6 downto 0) & "0";
-                                            reg(to_integer(unsigned(reg1))) <= shift_result;
-                                            if shift_result = "00000000" then
-                                                zero <= '1';
-                                            else
-                                                zero <= '0';
-                                            end if;
-                                        else
-                                            -- SHR
-                                            carry <= reg(to_integer(unsigned(reg1)))(0);
-                                            shift_result := "0" & reg(to_integer(unsigned(reg1)))(7 downto 1);
-                                            reg(to_integer(unsigned(reg1))) <= shift_result;
-                                            if shift_result = "00000000" then
-                                                zero <= '1';
-                                            else
-                                                zero <= '0';
-                                            end if;
-                                        end if;
-                                    elsif data(5 downto 4) = "01" then
-                                        if data(3) = '0' then
-                                            -- OUTL
-                                            hex_write <= '1';
-                                            hex_value <= reg(to_integer(unsigned(reg1)))(3 downto 0);
-                                        else
-                                            -- OUTH
-                                            hex_write <= '1';
-                                            hex_value <= reg(to_integer(unsigned(reg1)))(7 downto 4);
-                                        end if;
-                                    else
-                                        -- HLT
-                                        state <= HLT;
-                                    end if;
-                            end case;
+                            if data(7 downto 6) = "00" then
+                                alu_op := MOV;
+                            elsif data(7 downto 6) = "01" then
+                                alu_op := ADD;
+                            elsif data(7 downto 6) = "10" then
+                                alu_op := SUB;
+                            elsif data(7 downto 3) = "11000" then
+                                alu_op := SHL;
+                            elsif data(7 downto 3) = "11001" then
+                                alu_op := SHR;
+                            elsif data(7 downto 3) = "11010" then
+                                -- OUTL
+                                hex_write <= '1';
+                                if data(2) = '0' then
+                                    hex_value <= reg(to_integer(unsigned(data(1 downto 0))))(3 downto 0);
+                                else
+                                    hex_value <= reg_fixed(to_integer(unsigned(data(1 downto 0))))(3 downto 0);
+                                end if;
+                            elsif data(7 downto 3) = "11011" then
+                                -- OUTH
+                                hex_write <= '1';
+                                if data(2) = '0' then
+                                    hex_value <= reg(to_integer(unsigned(data(1 downto 0))))(7 downto 4);
+                                else
+                                    hex_value <= reg_fixed(to_integer(unsigned(data(1 downto 0))))(7 downto 4);
+                                end if;
+                            else
+                                -- HLT
+                                state <= HLT;
+                            end if;
                         end if;
+                        if data(2) = '0' then
+                            arg1 := "0" & unsigned(reg(to_integer(unsigned(data(1 downto 0)))));
+                        else
+                            arg1 := "0" & unsigned(reg_fixed(to_integer(unsigned(data(1 downto 0)))));
+                        end if;
+                        if data(5) = '0' then
+                            arg2 := "0" & unsigned(reg(to_integer(unsigned(data(4 downto 3)))));
+                        else
+                            arg2 := "0" & unsigned(reg_fixed(to_integer(unsigned(data(4 downto 3)))));
+                        end if;
+                        target := data(2 downto 0);
                     when FETCH_ARGUMENT =>
                         PC_reg <= std_logic_vector(unsigned(PC_reg) + 1);
-                        case IR_reg(7 downto 6) is
-                            when "00" =>
-                                -- MOV reg1, Const
-                                reg(to_integer(unsigned(reg1_ir))) <= data;
-                            when "01" =>
-                                -- ADD reg1, const
-                                result := resize(unsigned(reg(to_integer(unsigned(reg1_ir)))),9) + resize(unsigned(data),9);
-                                reg(to_integer(unsigned(reg1_ir))) <= std_logic_vector(result(7 downto 0));
-                                carry <= result(8);
-                                if result = "000000000" then
-                                    zero <= '1';
-                                else
-                                    zero <= '0';
-                                end if;
-                            when "10" =>
-                                -- SUB reg1, const
-                                result := resize(unsigned(reg(to_integer(unsigned(reg1_ir)))),9) - resize(unsigned(data),9);
-                                reg(to_integer(unsigned(reg1_ir))) <= std_logic_vector(result(7 downto 0));
-                                carry <= result(8);
-                                if result = "000000000" then
-                                    zero <= '1';
-                                else
-                                    zero <= '0';
-                                end if;
-                            when others =>
-                                if IR_reg(5 downto 4) = "10" then
-                                    if IR_reg(0) = '1' then
-                                        -- JZ
-                                        if zero = '1' then
-                                            PC_reg <= data;
-                                        end if;
-                                    elsif IR_reg(1) = '1' then
-                                        -- JNZ
-                                        if zero = '0' then
-                                            PC_reg <= data;
-                                        end if;
-                                    elsif IR_reg(2) = '1' then
-                                        -- JC
-                                        if carry = '1' then
-                                            PC_reg <= data;
-                                        end if;
-                                    elsif IR_reg(3) = '1' then
-                                        -- JNC
-                                        if carry = '0' then
-                                            PC_reg <= data;
-                                        end if;
-                                    else
-                                        -- JMP
-                                        PC_reg <= data;
-                                    end if;
-                                else
-                                    -- OUT
-                                    out_write <= '1';
-                                end if;
-                        end case;
+                        if IR_reg(7 downto 6) = "00" then
+                            alu_op := MOV;
+                        elsif IR_reg(7 downto 6) = "01" then
+                            alu_op := ADD;
+                        elsif IR_reg(7 downto 6) = "10" then
+                            alu_op := SUB;
+                        elsif IR_reg(7 downto 0) = "11100001" then
+                            -- JZ
+                            if zero = '1' then
+                                PC_reg <= data;
+                            end if;
+                        elsif IR_reg(7 downto 0) = "11100010" then
+                            -- JNZ
+                            if zero = '0' then
+                                PC_reg <= data;
+                            end if;
+                        elsif IR_reg(7 downto 0) = "11100100" then
+                            -- JC
+                            if carry = '1' then
+                                PC_reg <= data;
+                            end if;
+                        elsif IR_reg(7 downto 0) = "11101000" then
+                            -- JNC
+                            if carry = '0' then
+                                PC_reg <= data;
+                            end if;
+                        elsif IR_reg(7 downto 0) = "11100000" then
+                            -- JMP
+                            PC_reg <= data;
+                        else
+                            -- OUT
+                            out_write <= '1';
+                            lcd_char <= data; 
+                        end if;
                         state <= EXEC;
+                        if IR_reg(2) = '0' then
+                            arg1 := "0" & unsigned(reg(to_integer(unsigned(IR_reg(1 downto 0)))));
+                        else
+                            arg1 := "0" & unsigned(reg_fixed(to_integer(unsigned(IR_reg(1 downto 0)))));
+                        end if;
+                        arg2 := "0" & unsigned(data);
+                        target := IR_reg(2 downto 0);
                     when HLT =>
                         if leftInt_r = '1' then
-                            PC_reg <= x"08";
+                            PC_reg <= x"03";
                             leftInt_r <= '0';
+                            state <= EXEC;
                         elsif rightInt_r = '1' then
-                            PC_reg <= x"10";
+                            PC_reg <= x"0C";
                             rightInt_r <= '0';
+                            state <= EXEC;
                         elsif pushInt_r = '1' then
-                            PC_reg <= x"18";
+                            PC_reg <= x"15";
                             pushInt_r <= '0';
+                            state <= EXEC;
                         end if;
                 end case;
+                case alu_op is
+                    when MOV =>
+                        result := arg2;
+                    when ADD | SUB=>
+                        if alu_op = ADD then
+                            result := arg1 + arg2;
+                        else
+                            result := arg1 - arg2;
+                        end if;
+                        if result = "000000000" then
+                            zero <= '1';
+                        else
+                            zero <= '0';
+                        end if;
+                        carry <= result(8);
+                    when SHL =>
+                        result := arg1(7 downto 0) & "0";
+                        if result = "000000000" then
+                            zero <= '1';
+                        else
+                            zero <= '0';
+                        end if;
+                        carry <= arg1(7);
+                    when SHR =>
+                        result := "0" & arg1(8 downto 1);
+                        if result = "000000000" then
+                            zero <= '1';
+                        else
+                            zero <= '0';
+                        end if;
+                        carry <= arg1(0);
+                    when others =>
+                end case;
+                if (not (alu_op = NO_ALU)) and target(2) = '0' then
+                    reg(to_integer(unsigned(target(1 downto 0)))) <= std_logic_vector(result(7 downto 0));
+                end if;
             end if;
         end if;
     end process;
@@ -254,8 +271,8 @@ begin
     
     lcd_wr <= hex_write or out_write;
     lcd_out <= hex_ascii when hex_write = '1' else
-               data;
+               lcd_char;
 
     address <= PC_reg;
     
-end architecture RTL;
+end architecture beh;

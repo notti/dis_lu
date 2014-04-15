@@ -25,7 +25,7 @@ entity top is
 );
 end entity top;
 
-architecture RTL of top is
+architecture beh of top is
 
     signal rst       : std_logic;
     signal rst_n_i   : std_logic;
@@ -113,4 +113,4 @@ begin
     lcd_en_o  <= lcd_en;
     lcd_rw_o  <= lcd_rw;
 
-end architecture RTL;
+end architecture beh;

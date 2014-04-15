@@ -26,7 +26,9 @@ register = {
     'B' : 0x1,
     'C' : 0x2,
     'D' : 0x3,
-    'SWR' : 0x4
+    'ZERO' : 0x4,
+    'ONE' : 0x5,
+    'SWR' : 0x6,
 }
 def t_IMMEDIATE(t):
     r'(0[xX][0-9a-fA-F]+|[0-9]+)'
@@ -74,8 +76,11 @@ lex.lex()
 code = []
 labels = {}
 
+class CompilerError(Exception):
+    pass
+
 def syntax_error(text, lineno=None):
-    x = SyntaxError(text)
+    x = CompilerError(text)
     x.lineno = lineno
     raise x
 
@@ -90,7 +95,7 @@ def p_statement(p):
 
 def p_address(p):
     'address : IMMEDIATE DP'
-    if len(code) >= p[1]:
+    if len(code) > p[1]:
         syntax_error("Address %d already taken (now: @%d)" % (p[1], len(code)), p.lineno(1))
     code.extend([0] * (p[1] - len(code)))
 
@@ -155,7 +160,7 @@ args = argparser.parse_args()
 for line in args.infile:
     try:
         parser.parse(line)
-    except SyntaxError as e:
+    except CompilerError as e:
         print(str(e), file=sys.stderr)
         sys.exit(-1)
 
@@ -194,3 +199,4 @@ else:
     if args.template:
         for line in args.template:
             print(line, file=args.outfile, end='')
+print("""%d octets written.""" % len(code), file=sys.stderr)

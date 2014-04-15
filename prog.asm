@@ -10,26 +10,26 @@
     OUT '?'
     HLT
 
-0x08:               ; left interrupt
+0x03:               ; left interrupt
     SHR SWR
     JC LEFT_A
-    SUB B, 1
+    SUB B, ONE
     JMP OUT_NUM
-LEFT_A: SUB A, 1
+LEFT_A: SUB A, ONE
     JMP OUT_NUM
 
-0x16:               ; right interrupt
+0x0C:               ; right interrupt
     SHR SWR
     JC RIGHT_A
-    ADD B, 1
+    ADD B, ONE
     JMP OUT_NUM
 RIGHT_A:
-    ADD A, 1
+    ADD A, ONE
     JMP OUT_NUM
 
-0x24:               ; push interrupt
+0x15:               ; push interrupt
     OUT '='
-    SUB B, 0
+    SUB B, ZERO
     JNZ DIVIDE
     OUT 'E'
     OUT 'r'
@@ -39,18 +39,18 @@ RIGHT_A:
     HLT
 DIVIDE:
     MOV C, A
-    MOV D, 0
+    MOV D, ZERO
 DIV_CONT:
     SUB C, B
     JZ DIV_NO_RESIDUE ; no division residue
     JC DIV_RESIDUE ; division residue
-    ADD D, 1
+    ADD D, ONE
     JMP DIV_CONT
 DIV_RESIDUE:
     ADD C, B
     JMP DIV_OUT
 DIV_NO_RESIDUE:
-    MOV C, 0
+    MOV C, ZERO
 DIV_OUT:
     OUTH D
     OUTL D
